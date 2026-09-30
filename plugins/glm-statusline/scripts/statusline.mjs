@@ -142,10 +142,36 @@ async function renderQuota() {
 
 // ---------- 渲染 ----------
 
+// 异步读 stdin,带超时兜底:resume 旧会话时 Claude Code 可能不关闭输入管道,
+// 同步阻塞读会永远等不到 EOF 导致状态栏空白
+const readStdin = (timeoutMs = 800) =>
+  new Promise((resolve) => {
+    let s = '';
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    const timer = setTimeout(() => {
+      try {
+        process.stdin.destroy();
+      } catch {}
+      done(s);
+    }, timeoutMs);
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (c) => (s += c));
+    process.stdin.on('end', () => done(s));
+    process.stdin.on('error', () => done(s));
+  });
+
 async function main() {
+  const t0 = Date.now();
+  const raw = await readStdin();
   let d = {};
   try {
-    d = JSON.parse(fs.readFileSync(0, 'utf8'));
+    d = JSON.parse(raw);
   } catch {}
 
   const model = d.model?.display_name || d.model?.id || 'unknown';
@@ -186,4 +212,18 @@ async function main() {
   }
 
   process.stdout.write(parts.join(sep) + '\n');
-}main().catch(() => process.exit(0));
+
+  // GLM_STATUSLINE_DEBUG=1 时记录每次调用,排查 resume 等场景的取证开关
+  if (process.env.GLM_STATUSLINE_DEBUG === '1') {
+    try {
+      const dir = path.join(os.homedir(), '.claude', 'cache');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(
+        path.join(dir, 'glm-statusline-run.log'),
+        `${new Date().toISOString()} bytes=${raw.length} ms=${Date.now() - t0}\n`,
+      );
+    } catch {}
+  }
+}
+
+main().catch(() => process.exit(0));
