@@ -9,7 +9,7 @@
       "name": "glm-statusline",
       "source": "./plugins/glm-statusline",
       "description": "GLM Coding Plan 状态栏:上下文窗口占用、会话 token、5小时/每周额度百分比",
-      "version": "1.0.1"
+      "version": "1.0.2"
     }
   ]
 }

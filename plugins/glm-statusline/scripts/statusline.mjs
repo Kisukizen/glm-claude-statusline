@@ -199,7 +199,8 @@ async function main() {
     `in ${fmtK(cw.total_input_tokens)} out ${fmtK(cw.total_output_tokens)}`,
   ];
 
-  if (d.exceeds_200k_tokens) parts.push(`${C.red}⚠ >200k${C.reset}`);
+  // exceeds_200k_tokens 是固定 200k 阈值、不看实际窗口大小,对 1M 窗口模型是误报,只在 200k 窗口下提示
+  if (d.exceeds_200k_tokens && size <= 200000) parts.push(`${C.red}⚠ >200k${C.reset}`);
 
   const quota = await renderQuota();
   if (quota?.limits?.length) {
