@@ -24,9 +24,20 @@ const remove = args.includes('--remove');
 const scriptIdx = args.indexOf('--script');
 const scriptArg = scriptIdx !== -1 ? args[scriptIdx + 1] : null;
 
-// hook 模式(无参数运行)下任何失败都静默退出,避免干扰会话启动
+// hook 模式(无参数运行)下任何失败都静默退出,避免干扰会话启动;
+// 但无论成败都追加一行日志到 ~/.claude/cache/,方便排查 hook 是否运行过
 const hookMode = args.length === 0 && process.env.CLAUDE_PLUGIN_ROOT;
 const log = (msg) => process.stderr.write(`[glm-statusline] ${msg}\n`);
+const audit = (msg) => {
+  try {
+    const dir = path.join(os.homedir(), '.claude', 'cache');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      path.join(dir, 'glm-statusline-setup.log'),
+      `${new Date().toISOString()} argv=${JSON.stringify(args)} ${msg}\n`,
+    );
+  } catch {}
+};
 
 const settingsFile = path.join(os.homedir(), '.claude', 'settings.json');
 const scriptPath =
@@ -36,6 +47,7 @@ const scriptPath =
 const MARKER = 'glm-statusline';
 
 const run = () => {
+  audit(`start hookMode=${hookMode} script=${scriptPath}`);
   let settings = {};
   try {
     settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
@@ -49,16 +61,22 @@ const run = () => {
       delete settings.statusLine;
       save(settings, fs.existsSync(settingsFile));
       log('已移除 statusLine 配置');
+      audit('removed');
     } else {
       log('当前 statusLine 不是本插件写入的,未改动');
+      audit('remove skipped: foreign statusLine');
     }
     return;
   }
 
-  if (current === expected) return; // 已注册且路径一致,幂等退出
+  if (current === expected) {
+    audit('ok: already registered');
+    return; // 已注册且路径一致,幂等退出
+  }
 
   if (current && !current.includes(MARKER) && !force) {
     log('已存在其他 statusLine 配置,跳过(用 --force 覆盖)');
+    audit('skip: foreign statusLine');
     return;
   }
 
@@ -69,6 +87,7 @@ const run = () => {
   };
   save(settings, fs.existsSync(settingsFile));
   log(`已注册 statusLine → node "${scriptPath}"`);
+  audit(`registered: ${expected}`);
 };
 
 function save(settings, fileExisted) {
@@ -87,5 +106,6 @@ try {
   run();
 } catch (e) {
   log(e.message);
+  audit(`error: ${e.message}`);
   if (!hookMode) process.exit(1);
 }
